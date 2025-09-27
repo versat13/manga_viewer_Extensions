@@ -1,7 +1,6 @@
 # Manga Double-page Spread Viewer - Chrome Extension
 
 マンガなどの画像が縦一列に並んでいるサイトで機能する見開き型ビューア
-
 （ノンプログラマーによるバイブコーディング製）
 
 ## 機能
