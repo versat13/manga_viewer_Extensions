@@ -8,53 +8,53 @@
     body {
       width: 350px;
       margin: 0;
-      padding: 16px;
+      padding: 12px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      font-size: 14px;
+      font-size: 13px;
       background: #f8f9fa;
     }
     
     .header {
       text-align: center;
-      margin-bottom: 20px;
-      padding-bottom: 15px;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
       border-bottom: 2px solid #e9ecef;
     }
     
     .header h1 {
       margin: 0;
-      font-size: 18px;
+      font-size: 16px;
       color: #333;
       font-weight: 600;
     }
     
     .section {
-      margin-bottom: 20px;
+      margin-bottom: 12px;
       background: white;
-      border-radius: 8px;
-      padding: 15px;
+      border-radius: 6px;
+      padding: 10px;
       box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
     
     .section-title {
       font-weight: 600;
-      margin-bottom: 12px;
+      margin-bottom: 8px;
       color: #495057;
-      font-size: 15px;
+      font-size: 13px;
     }
     
     .button-group {
       display: flex;
-      gap: 8px;
-      margin-bottom: 12px;
+      gap: 6px;
+      margin-bottom: 8px;
     }
     
     .btn {
       flex: 1;
-      padding: 10px 12px;
+      padding: 7px 10px;
       border: none;
-      border-radius: 6px;
-      font-size: 13px;
+      border-radius: 4px;
+      font-size: 12px;
       font-weight: 500;
       cursor: pointer;
       transition: all 0.2s;
@@ -87,15 +87,6 @@
       background: #1e7e34;
     }
     
-    .btn-warning {
-      background: #ffc107;
-      color: #212529;
-    }
-    
-    .btn-warning:hover {
-      background: #e0a800;
-    }
-    
     .btn-danger {
       background: #dc3545;
       color: white;
@@ -106,10 +97,10 @@
     }
     
     .status {
-      padding: 8px 12px;
+      padding: 6px 10px;
       border-radius: 4px;
-      font-size: 12px;
-      margin-bottom: 10px;
+      font-size: 11px;
+      margin-bottom: 8px;
       font-weight: 500;
     }
     
@@ -133,54 +124,28 @@
     
     .mode-select {
       width: 100%;
-      padding: 8px;
+      padding: 6px;
       border: 1px solid #ced4da;
       border-radius: 4px;
-      font-size: 13px;
-      margin-bottom: 10px;
-    }
-    
-    .mode-description {
       font-size: 12px;
-      color: #6c757d;
-      margin-bottom: 10px;
-      line-height: 1.4;
-    }
-    
-    .toggle-group {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-    
-    .toggle-label {
-      font-size: 13px;
-      color: #495057;
-      flex: 1;
+      margin-bottom: 8px;
     }
     
     .current-site {
-      font-size: 12px;
+      font-size: 11px;
       color: #6c757d;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
       word-break: break-all;
     }
     
-    .divider {
-      height: 1px;
-      background: #e9ecef;
-      margin: 15px 0;
-    }
-    
     .test-results {
-      font-size: 12px;
+      font-size: 11px;
       color: #495057;
       background: #f8f9fa;
-      padding: 8px;
+      padding: 6px;
       border-radius: 4px;
-      margin-top: 10px;
-      max-height: 100px;
+      margin-top: 8px;
+      max-height: 80px;
       overflow-y: auto;
     }
     
@@ -188,77 +153,62 @@
       opacity: 0.6;
       pointer-events: none;
     }
+
+    .compact-row {
+      display: flex;
+      gap: 6px;
+    }
+
+    .compact-row .btn {
+      font-size: 11px;
+      padding: 6px 8px;
+    }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>📖 Manga Viewer</h1>
+    <h1>Manga Viewer</h1>
   </div>
 
   <div class="section">
-    <div class="section-title">メイン操作</div>
-    <div class="button-group">
-      <button id="launchViewer" class="btn btn-primary">📖 ビューア起動</button>
-      <button id="testDetection" class="btn btn-secondary">🔬 検出テスト</button>
-    </div>
-    <div id="testResults" class="test-results" style="display: none;"></div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">サイト設定</div>
     <div id="currentSite" class="current-site"></div>
     <div id="siteStatus" class="status"></div>
     <div class="button-group">
-      <button id="showButton" class="btn btn-success">👁️ ボタン表示</button>
-      <button id="hideButton" class="btn btn-danger">🚫 ボタン非表示</button>
+      <button id="launchViewer" class="btn btn-primary">ビューア起動</button>
+      <button id="testDetection" class="btn btn-secondary">検出テスト</button>
     </div>
+    <div class="button-group">
+      <button id="showButton" class="btn btn-success">ボタン表示</button>
+      <button id="hideButton" class="btn btn-danger">ボタン非表示</button>
+    </div>
+    <div id="testResults" class="test-results" style="display: none;"></div>
   </div>
 
   <div class="section">
     <div class="section-title">画像検出設定</div>
     <div id="detectionStatus" class="status detection-mode"></div>
     <select id="detectionMode" class="mode-select">
-      <option value="auto">🤖 自動検出 - 全ての方法を試して最適なものを選択</option>
-      <option value="smart">🧠 スマート検出 - リソース情報から画像を検出</option>
-      <option value="deep-scan">🔍 ディープスキャン - HTMLコードから画像URLを解析</option>
-      <option value="basic">📄 基本型 - ページ上の&lt;img&gt;タグを直接検索</option>
-      <option value="frame-reader">🖼️ フレーム型 - iframe内の画像を検索</option>
-      <option value="reading-content">📱 エリア型 - .reading-content内を検索</option>
-      <option value="chapter-content">📄 チャプター型 - .chapter-content内を検索</option>
-      <option value="manga-reader">📚 リーダー型 - .manga-reader内を検索</option>
-      <option value="entry-content">📋 エントリー型 - .entry-content内を検索</option>
-      <option value="niconico-seiga">📺 Canvasモード - Canvasから画像を抽出（ニコニコ静画等）</option>
+      <option value="auto">自動検出</option>
+      <option value="smart">スマート検出</option>
+      <option value="deep-scan">ディープスキャン</option>
+      <option value="basic">基本型</option>
+      <option value="frame-reader">フレーム型</option>
+      <option value="reading-content">エリア型</option>
+      <option value="chapter-content">チャプター型</option>
+      <option value="manga-reader">リーダー型</option>
+      <option value="entry-content">エントリー型</option>
+      <option value="niconico-seiga">Canvasモード</option>
     </select>
   </div>
 
   <div class="section">
-    <div class="section-title">表示設定</div>
-    <div class="toggle-group">
-      <span class="toggle-label">表示モード:</span>
-      <div id="displayModeStatus" class="status"></div>
-    </div>
-    <div class="button-group">
-      <button id="singlePageMode" class="btn btn-warning">📄 単ページ</button>
-      <button id="spreadPageMode" class="btn btn-warning">📖 見開き</button>
-    </div>
+    <div class="section-title">設定確認</div>
+    <button id="showAllSettings" class="btn btn-secondary" style="width: 100%;">全設定表示</button>
+    <div id="settingsDisplay" class="test-results" style="display: none; max-height: 80px;"></div>
   </div>
 
-  <div class="divider"></div>
-
   <div class="section">
-    <div class="section-title">危険な操作</div>
-    <button id="resetSiteSettings" class="btn btn-danger">⚠️ このサイトの設定をリセット</button>
-  </div>
-
-  <div class="divider"></div>
-
-  <div class="section">
-    <div class="section-title">設定確認・管理</div>
-    <div class="button-group">
-      <button id="showAllSettings" class="btn btn-secondary">📋 全設定を表示</button>
-      <button id="exportSettings" class="btn btn-secondary">📄 設定をエクスポート</button>
-    </div>
-    <div id="settingsDisplay" class="test-results" style="display: none; max-height: 200px;"></div>
+    <button id="resetSiteSettings" class="btn btn-danger" style="width: 100%;">このサイトの設定をリセット</button>
   </div>
 
   <script src="popup.js"></script>

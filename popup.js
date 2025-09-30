@@ -1,4 +1,4 @@
-// Popup script for Manga Viewer Extension
+// Popup script for Manga Viewer Extension - Fixed Version
 
 class PopupManager {
   constructor() {
@@ -40,15 +40,10 @@ class PopupManager {
       const detectionResult = await chrome.storage.sync.get(detectionModeKey);
       this.detectionMode = detectionResult[detectionModeKey] || 'auto';
       
-      const singlePageKey = `mangaViewerSinglePage_${this.hostname}`;
-      const singlePageResult = await chrome.storage.sync.get(singlePageKey);
-      this.singlePageMode = singlePageResult[singlePageKey] === 'true';
-      
     } catch (error) {
       console.error('Failed to load settings:', error);
       this.siteSettings = {};
       this.detectionMode = 'auto';
-      this.singlePageMode = false;
     }
   }
 
@@ -73,13 +68,7 @@ class PopupManager {
       this.setDetectionMode(e.target.value);
     });
 
-    document.getElementById('singlePageMode').addEventListener('click', () => {
-      this.setDisplayMode(true);
-    });
 
-    document.getElementById('spreadPageMode').addEventListener('click', () => {
-      this.setDisplayMode(false);
-    });
 
     document.getElementById('resetSiteSettings').addEventListener('click', () => {
       this.resetSiteSettings();
@@ -127,15 +116,6 @@ class PopupManager {
       
       detectionStatus.textContent = `現在: ${modeNames[this.detectionMode] || this.detectionMode}`;
 
-      const displayStatus = document.getElementById('displayModeStatus');
-      if (this.singlePageMode) {
-        displayStatus.textContent = '単ページ表示';
-        displayStatus.className = 'status status-show';
-      } else {
-        displayStatus.textContent = '見開き表示';
-        displayStatus.className = 'status status-hide';
-      }
-
     } catch (error) {
       console.error('Failed to update UI:', error);
     }
@@ -155,16 +135,20 @@ class PopupManager {
         throw new Error('この種類のページでは動作しません');
       }
 
+      // まずpingを送信してcontent scriptが読み込まれているか確認
       let response;
       try {
         response = await chrome.tabs.sendMessage(this.currentTab.id, { action: 'ping' });
       } catch (pingError) {
+        // content scriptが読み込まれていない場合は注入を試みる
+        console.log('[Popup] Content script not loaded, attempting injection...');
         try {
           await chrome.scripting.executeScript({
             target: { tabId: this.currentTab.id },
             files: ['content.js']
           });
           
+          // 注入後、少し待機してから再度ping
           await new Promise(resolve => setTimeout(resolve, 1000));
           response = await chrome.tabs.sendMessage(this.currentTab.id, { action: 'ping' });
         } catch (injectError) {
@@ -172,6 +156,7 @@ class PopupManager {
         }
       }
 
+      // ビューアを起動
       const launchResponse = await chrome.tabs.sendMessage(this.currentTab.id, {
         action: 'launchViewer'
       });
@@ -180,8 +165,10 @@ class PopupManager {
         button.textContent = '起動完了';
         setTimeout(() => window.close(), 1000);
       } else {
+        // 失敗の理由を詳細に表示
         const reason = launchResponse ? launchResponse.reason : 'unknown';
         if (reason === 'insufficient_images') {
+          // 画像が見つからない場合は、より詳細なメッセージを表示
           throw new Error('画像が見つかりませんでした。検出モードを変更するか、検出テストを実行してください。');
         } else {
           throw new Error(`起動に失敗しました: ${reason}`);
@@ -215,6 +202,7 @@ class PopupManager {
       button.classList.add('loading');
       resultsDiv.style.display = 'none';
 
+      // content scriptが読み込まれているか確認
       try {
         await chrome.tabs.sendMessage(this.currentTab.id, { action: 'ping' });
       } catch (pingError) {
@@ -237,9 +225,21 @@ class PopupManager {
         const results = response.results;
         let resultText = '検出結果:\n';
         
-        Object.entries(results).forEach(([method, count]) => {
-          resultText += `${method}: ${count}枚\n`;
+        // 結果を画像数の多い順にソート
+        const sortedResults = Object.entries(results).sort((a, b) => b[1] - a[1]);
+        
+        sortedResults.forEach(([method, count]) => {
+          const emoji = count > 0 ? '✅' : '❌';
+          resultText += `${emoji} ${method}: ${count}枚\n`;
         });
+        
+        // 推奨モードを表示
+        const bestMode = sortedResults[0];
+        if (bestMode && bestMode[1] > 0) {
+          resultText += `\n推奨: ${bestMode[0]} (${bestMode[1]}枚)`;
+        } else {
+          resultText += '\n⚠️ どのモードでも画像が検出できませんでした';
+        }
         
         resultsDiv.textContent = resultText;
         resultsDiv.style.display = 'block';
@@ -268,6 +268,7 @@ class PopupManager {
       this.siteSettings[this.hostname] = mode;
       await chrome.storage.sync.set({ mangaViewerDomains: this.siteSettings });
       
+      // content scriptに通知
       try {
         await chrome.tabs.sendMessage(this.currentTab.id, {
           action: 'updateSiteMode',
@@ -279,7 +280,7 @@ class PopupManager {
       
       await this.updateUI();
       
-      const statusText = mode === 'show' ? 'ボタン表示に設定しました' : 'ボタン非表示に設定しました';
+      const statusText = mode === 'show' ? '表示に設定しました' : '非表示に設定しました';
       this.showMessage(statusText, 'success');
       
     } catch (error) {
@@ -294,6 +295,7 @@ class PopupManager {
       const key = `mangaDetectionMode_${this.hostname}`;
       await chrome.storage.sync.set({ [key]: mode });
       
+      // content scriptに通知
       try {
         await chrome.tabs.sendMessage(this.currentTab.id, {
           action: 'updateDetectionMode',
@@ -318,6 +320,7 @@ class PopupManager {
       const key = `mangaViewerSinglePage_${this.hostname}`;
       await chrome.storage.sync.set({ [key]: isSingle.toString() });
       
+      // content scriptに通知
       try {
         await chrome.tabs.sendMessage(this.currentTab.id, {
           action: 'updateDisplayMode',
@@ -418,7 +421,7 @@ class PopupManager {
       
       const exportData = {
         exportDate: new Date().toISOString(),
-        version: '3.3.0',
+        version: '3.4.0',
         settings: siteSettings
       };
 
@@ -451,7 +454,7 @@ class PopupManager {
   async resetSiteSettings() {
     try {
       const confirmed = confirm(
-        `${this.hostname} の設定をリセットしますか？\n（現在のページもリロードされます）`
+        `${this.hostname} の設定をリセットしますか?\n(現在のページもリロードされます)`
       );
       
       if (!confirmed) return;
