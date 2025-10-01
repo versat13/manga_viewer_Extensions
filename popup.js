@@ -14,7 +14,7 @@ class PopupManager {
       this.setupEventListeners();
       await this.updateUI();
     } catch (error) {
-      console.error('Popup initialization failed:', error);
+      console.error('[MangaViewer Popup]', error);
     }
   }
 
@@ -68,18 +68,12 @@ class PopupManager {
       this.setDetectionMode(e.target.value);
     });
 
-
-
-    document.getElementById('resetSiteSettings').addEventListener('click', () => {
-      this.resetSiteSettings();
-    });
-
     document.getElementById('showAllSettings').addEventListener('click', () => {
       this.showAllSettings();
     });
 
-    document.getElementById('exportSettings').addEventListener('click', () => {
-      this.exportSettings();
+    document.getElementById('resetSiteSettings').addEventListener('click', () => {
+      this.resetSiteSettings();
     });
   }
 
@@ -135,12 +129,10 @@ class PopupManager {
         throw new Error('この種類のページでは動作しません');
       }
 
-      // まずpingを送信してcontent scriptが読み込まれているか確認
       let response;
       try {
         response = await chrome.tabs.sendMessage(this.currentTab.id, { action: 'ping' });
       } catch (pingError) {
-        // content scriptが読み込まれていない場合は注入を試みる
         console.log('[Popup] Content script not loaded, attempting injection...');
         try {
           await chrome.scripting.executeScript({
@@ -148,7 +140,6 @@ class PopupManager {
             files: ['content.js']
           });
           
-          // 注入後、少し待機してから再度ping
           await new Promise(resolve => setTimeout(resolve, 1000));
           response = await chrome.tabs.sendMessage(this.currentTab.id, { action: 'ping' });
         } catch (injectError) {
@@ -156,7 +147,8 @@ class PopupManager {
         }
       }
 
-      // ビューアを起動
+      await new Promise(resolve => setTimeout(resolve, 500));
+
       const launchResponse = await chrome.tabs.sendMessage(this.currentTab.id, {
         action: 'launchViewer'
       });
@@ -165,27 +157,28 @@ class PopupManager {
         button.textContent = '起動完了';
         setTimeout(() => window.close(), 1000);
       } else {
-        // 失敗の理由を詳細に表示
         const reason = launchResponse ? launchResponse.reason : 'unknown';
         if (reason === 'insufficient_images') {
-          // 画像が見つからない場合は、より詳細なメッセージを表示
-          throw new Error('画像が見つかりませんでした。検出モードを変更するか、検出テストを実行してください。');
+          button.textContent = 'ビューア起動';
+          button.classList.remove('loading');
+          this.showMessage('画像未検出。検出テストを実行してください', 'error');
+          return;
         } else {
-          throw new Error(`起動に失敗しました: ${reason}`);
+          throw new Error(`起動失敗: ${reason}`);
         }
       }
 
     } catch (error) {
-      console.error('Failed to launch viewer:', error);
+      console.error('[MangaViewer]', error);
       
-      let errorMessage = 'ビューアの起動に失敗しました';
+      let userMessage = '起動できませんでした';
       if (error.message.includes('Could not establish connection')) {
-        errorMessage = 'ページとの通信に失敗しました。ページをリロードしてから再試行してください。';
-      } else if (error.message) {
-        errorMessage = error.message;
+        userMessage = 'ページをリロードしてください';
+      } else if (error.message.includes('スクリプト')) {
+        userMessage = 'ページをリロードしてください';
       }
       
-      this.showMessage(errorMessage, 'error');
+      this.showMessage(userMessage, 'error');
       
       const button = document.getElementById('launchViewer');
       button.textContent = 'ビューア起動';
@@ -202,7 +195,6 @@ class PopupManager {
       button.classList.add('loading');
       resultsDiv.style.display = 'none';
 
-      // content scriptが読み込まれているか確認
       try {
         await chrome.tabs.sendMessage(this.currentTab.id, { action: 'ping' });
       } catch (pingError) {
@@ -225,7 +217,6 @@ class PopupManager {
         const results = response.results;
         let resultText = '検出結果:\n';
         
-        // 結果を画像数の多い順にソート
         const sortedResults = Object.entries(results).sort((a, b) => b[1] - a[1]);
         
         sortedResults.forEach(([method, count]) => {
@@ -233,7 +224,6 @@ class PopupManager {
           resultText += `${emoji} ${method}: ${count}枚\n`;
         });
         
-        // 推奨モードを表示
         const bestMode = sortedResults[0];
         if (bestMode && bestMode[1] > 0) {
           resultText += `\n推奨: ${bestMode[0]} (${bestMode[1]}枚)`;
@@ -251,10 +241,10 @@ class PopupManager {
       button.classList.remove('loading');
 
     } catch (error) {
-      console.error('Detection test failed:', error);
+      console.error('[MangaViewer Test]', error);
       
       const resultsDiv = document.getElementById('testResults');
-      resultsDiv.textContent = `エラー: ${error.message}`;
+      resultsDiv.textContent = `テスト失敗: ページをリロードしてください`;
       resultsDiv.style.display = 'block';
       
       const button = document.getElementById('testDetection');
@@ -268,7 +258,6 @@ class PopupManager {
       this.siteSettings[this.hostname] = mode;
       await chrome.storage.sync.set({ mangaViewerDomains: this.siteSettings });
       
-      // content scriptに通知
       try {
         await chrome.tabs.sendMessage(this.currentTab.id, {
           action: 'updateSiteMode',
@@ -295,7 +284,6 @@ class PopupManager {
       const key = `mangaDetectionMode_${this.hostname}`;
       await chrome.storage.sync.set({ [key]: mode });
       
-      // content scriptに通知
       try {
         await chrome.tabs.sendMessage(this.currentTab.id, {
           action: 'updateDetectionMode',
@@ -311,33 +299,6 @@ class PopupManager {
     } catch (error) {
       console.error('Failed to set detection mode:', error);
       this.showMessage('検出モードの設定に失敗しました', 'error');
-    }
-  }
-
-  async setDisplayMode(isSingle) {
-    try {
-      this.singlePageMode = isSingle;
-      const key = `mangaViewerSinglePage_${this.hostname}`;
-      await chrome.storage.sync.set({ [key]: isSingle.toString() });
-      
-      // content scriptに通知
-      try {
-        await chrome.tabs.sendMessage(this.currentTab.id, {
-          action: 'updateDisplayMode',
-          isSingle: isSingle
-        });
-      } catch (error) {
-        console.log('Could not notify content script, but setting saved');
-      }
-      
-      await this.updateUI();
-      
-      const statusText = isSingle ? '単ページ表示に設定しました' : '見開き表示に設定しました';
-      this.showMessage(statusText, 'success');
-      
-    } catch (error) {
-      console.error('Failed to set display mode:', error);
-      this.showMessage('表示モードの設定に失敗しました', 'error');
     }
   }
 
@@ -407,46 +368,6 @@ class PopupManager {
       
       const button = document.getElementById('showAllSettings');
       button.textContent = '全設定を表示';
-      button.classList.remove('loading');
-    }
-  }
-
-  async exportSettings() {
-    try {
-      const button = document.getElementById('exportSettings');
-      button.textContent = '出力中...';
-      button.classList.add('loading');
-
-      const siteSettings = await chrome.storage.sync.get();
-      
-      const exportData = {
-        exportDate: new Date().toISOString(),
-        version: '3.4.0',
-        settings: siteSettings
-      };
-
-      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `manga-viewer-settings-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-
-      this.showMessage('設定をファイルに出力しました', 'success');
-
-      button.textContent = '設定をエクスポート';
-      button.classList.remove('loading');
-
-    } catch (error) {
-      console.error('Failed to export settings:', error);
-      this.showMessage('設定の出力に失敗しました', 'error');
-      
-      const button = document.getElementById('exportSettings');
-      button.textContent = '設定をエクスポート';
       button.classList.remove('loading');
     }
   }

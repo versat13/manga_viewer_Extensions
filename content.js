@@ -1,4 +1,4 @@
-// content.js - Manga Viewer Extension v3.4.0 (Complete & Fixed)
+// content.js - Manga Viewer Extension v3.4.1 (Complete & Fixed)
 
 (async function () {
   'use strict';
@@ -27,7 +27,7 @@
     niconico: { threshold: CONFIG.niconico.defaultThreshold }
   };
 
-  const elements = { container: null, imageArea: null, bgToggleBtn: null, fullscreenBtn: null, toggleButton: null, niconicoThresholdUI: null, singlePageBtn: null, navigationElement: null };
+  const elements = { container: null, imageArea: null, bgToggleBtn: null, fullscreenBtn: null, toggleButton: null, niconicoThresholdUI: null, singlePageBtn: null, navigationElement: null, downloadPanel: null, downloadBtn: null };
   const observers = { intersection: null, mutation: null };
   const timers = { refresh: null, navigation: null, scroll: null, polling: null };
   const watched = new WeakSet();
@@ -388,6 +388,274 @@
     }
   };
 
+  const DownloadManager = {
+    async getLastFolderName() {
+      const result = await chrome.storage.sync.get('mangaViewerLastFolder');
+      return result.mangaViewerLastFolder || '';
+    },
+    async saveLastFolderName(folderName) {
+      await chrome.storage.sync.set({ 'mangaViewerLastFolder': folderName });
+    },
+    suggestNextFolderName(lastFolder) {
+      if (!lastFolder) {
+        return this.getFolderNameFromURL();
+      }
+      const match = lastFolder.match(/^(.+?)(\d+)$/);
+      if (match) {
+        const base = match[1];
+        const num = parseInt(match[2]);
+        const nextNum = num + 1;
+        const padding = match[2].length;
+        return base + String(nextNum).padStart(padding, '0');
+      }
+      return lastFolder + '1';
+    },
+    getFolderNameFromURL() {
+      const path = window.location.pathname;
+      const segments = path.split('/').filter(s => s);
+      if (segments.length > 0) {
+        const lastSegment = segments[segments.length - 1];
+        // URLデコードして日本語を保持
+        const decoded = decodeURIComponent(lastSegment);
+        // 拡張子を削除し、ファイルシステムで使えない文字のみ置換
+        return decoded.replace(/\.[^/.]+$/, '').replace(/[\\/:*?"<>|]/g, '_');
+      }
+      return 'manga-download';
+    },
+    async downloadAsZip(folderName, startPage, endPage, useOriginalNames) {
+      // ZIP機能は現在サポートされていません
+      throw new Error('ZIP形式は現在サポートされていません。連番画像を使用してください。');
+    },
+    async downloadIndividual(folderName, startPage, endPage, useOriginalNames) {
+      const start = Math.min(startPage, endPage);
+      const end = Math.max(startPage, endPage);
+      
+      for (let i = start; i <= end; i++) {
+        const idx = i - 1;
+        if (idx >= 0 && idx < state.images.length) {
+          const img = state.images[idx];
+          try {
+            let filename;
+            if (useOriginalNames) {
+              filename = this.getOriginalFilename(img.src, i);
+            } else {
+              const ext = this.getExtension(img.src);
+              filename = `${folderName}_${String(i).padStart(3, '0')}.${ext}`;
+            }
+            
+            await chrome.runtime.sendMessage({
+              action: 'downloadImage',
+              url: img.src,
+              filename: `manga-viewer/${folderName}/${filename}`,
+              conflictAction: 'overwrite'
+            });
+            
+            await new Promise(resolve => setTimeout(resolve, 50));
+          } catch (e) {
+            console.error(`Failed to download image ${i}:`, e);
+          }
+        }
+      }
+      
+      await this.saveLastFolderName(folderName);
+    },
+    getOriginalFilename(src, pageNum) {
+      const url = new URL(src, window.location.href);
+      const pathname = url.pathname;
+      const filename = pathname.split('/').pop();
+      if (filename && filename.includes('.')) {
+        return filename;
+      }
+      return `page_${String(pageNum).padStart(3, '0')}.jpg`;
+    },
+    getExtension(src) {
+      if (src.startsWith('data:image/png')) return 'png';
+      if (src.startsWith('data:image/jpeg')) return 'jpg';
+      if (src.startsWith('data:image/webp')) return 'webp';
+      const url = new URL(src, window.location.href);
+      const pathname = url.pathname;
+      const match = pathname.match(/\.([^.]+)$/);
+      if (match) return match[1].toLowerCase();
+      return 'jpg';
+    }
+  };
+
+  const DownloadUI = {
+    async createDownloadPanel() {
+      if (elements.downloadPanel) return;
+      
+      const panel = document.createElement('div');
+      panel.style.cssText = `position:absolute;bottom:140px;left:20px;background:rgba(0,0,0,0.9);color:white;padding:15px;border-radius:8px;z-index:2;font-size:13px;min-width:280px;display:none;`;
+      panel.setAttribute('data-mv-ui', '1');
+      
+      const lastFolder = await DownloadManager.getLastFolderName();
+      const suggestedFolder = DownloadManager.suggestNextFolderName(lastFolder);
+      
+      panel.innerHTML = `
+        <div style="position:relative;">
+          <div style="font-weight:bold;margin-bottom:10px;color:#4FC3F7;">画像をダウンロード</div>
+          <button id="mv-download-close" style="position:absolute;top:-5px;right:-5px;background:rgba(255,255,255,0.2);color:white;border:none;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:16px;line-height:24px;padding:0;">×</button>
+        </div>
+        
+        <div style="margin-bottom:10px;">
+          <label style="display:block;margin-bottom:4px;font-size:12px;">フォルダ名（ダウンロードフォルダ内に新規作成）:</label>
+          <input type="text" id="mv-folder-name" value="${suggestedFolder}" placeholder="空欄の場合はURL末尾を使用" style="width:100%;padding:6px;border:1px solid #555;border-radius:4px;background:#2a2a2a;color:white;font-size:12px;">
+          ${lastFolder ? `<div style="font-size:11px;color:#888;margin-top:4px;">💡 前回: ${lastFolder}</div>` : ''}
+        </div>
+        
+        <div style="margin-bottom:10px;">
+          <label style="display:block;margin-bottom:6px;font-size:12px;">画像リネーム:</label>
+          <label style="display:block;margin-bottom:4px;font-size:11px;cursor:pointer;">
+            <input type="radio" name="mv-filename-type" value="original" style="margin-right:6px;cursor:pointer;">
+            元ファイル名
+          </label>
+          <label style="display:block;font-size:11px;cursor:pointer;">
+            <input type="radio" name="mv-filename-type" value="numbered" checked style="margin-right:6px;cursor:pointer;">
+            フォルダ名_3桁連番
+          </label>
+        </div>
+        
+        <div style="margin-bottom:10px;">
+          <label style="display:block;margin-bottom:6px;font-size:12px;">保存ページ範囲:</label>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="font-size:11px;width:32px;">開始</span>
+            <input type="number" id="mv-start-page" min="1" max="${state.images.length}" value="1" style="width:50px;padding:4px;border:1px solid #555;border-radius:4px;background:#2a2a2a;color:white;text-align:center;font-size:12px;">
+            <input type="range" id="mv-range-slider-start" min="1" max="${state.images.length}" value="1" style="flex:1;direction:rtl;height:8px;">
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:11px;width:32px;">終了</span>
+            <input type="number" id="mv-end-page" min="1" max="${state.images.length}" value="${state.images.length}" style="width:50px;padding:4px;border:1px solid #555;border-radius:4px;background:#2a2a2a;color:white;text-align:center;font-size:12px;">
+            <input type="range" id="mv-range-slider-end" min="1" max="${state.images.length}" value="${state.images.length}" style="flex:1;direction:rtl;height:8px;">
+          </div>
+        </div>
+        
+        <div style="margin-bottom:12px;">
+          <label style="display:block;margin-bottom:6px;font-size:12px;">保存形式:</label>
+          <label style="display:inline-block;margin-right:15px;font-size:11px;cursor:pointer;">
+            <input type="radio" name="mv-download-type" value="individual" checked style="margin-right:6px;cursor:pointer;">
+            連番画像
+          </label>
+          <label style="display:inline-block;font-size:11px;color:#666;cursor:not-allowed;" title="現在サポートされていません">
+            <input type="radio" name="mv-download-type" value="zip" disabled style="margin-right:6px;">
+            ZIP形式（準備中）
+          </label>
+        </div>
+        
+        <button id="mv-download-execute" style="width:100%;padding:8px;background:#4FC3F7;color:#000;border:none;border-radius:4px;font-weight:bold;cursor:pointer;font-size:13px;">
+          ダウンロード
+        </button>
+        
+        <style>
+          input[type="range"]#mv-range-slider-start::-webkit-slider-thumb,
+          input[type="range"]#mv-range-slider-end::-webkit-slider-thumb {
+            appearance: none;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4FC3F7;
+            cursor: pointer;
+          }
+          input[type="range"]#mv-range-slider-start::-webkit-slider-runnable-track,
+          input[type="range"]#mv-range-slider-end::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 8px;
+            background: linear-gradient(to left, #4FC3F7 var(--progress), #555 var(--progress));
+            border-radius: 4px;
+          }
+        </style>
+      `;
+      
+      elements.container.appendChild(panel);
+      elements.downloadPanel = panel;
+      
+      this.setupEventListeners();
+    },
+    setupEventListeners() {
+      const endPageInput = document.getElementById('mv-end-page');
+      const endPageSlider = document.getElementById('mv-range-slider-end');
+      const startPageInput = document.getElementById('mv-start-page');
+      const startPageSlider = document.getElementById('mv-range-slider-start');
+      
+      // スライダーのプログレス表示を更新
+      const updateSliderProgress = (slider, value, max) => {
+        const progress = ((max - value + 1) / max) * 100;
+        slider.style.setProperty('--progress', `${progress}%`);
+      };
+      
+      endPageInput.addEventListener('input', (e) => {
+        endPageSlider.value = e.target.value;
+        updateSliderProgress(endPageSlider, e.target.value, state.images.length);
+      });
+      endPageSlider.addEventListener('input', (e) => {
+        endPageInput.value = e.target.value;
+        updateSliderProgress(endPageSlider, e.target.value, state.images.length);
+        // ビューアをそのページにジャンプ
+        const pageNum = parseInt(e.target.value) - 1;
+        if (pageNum >= 0 && pageNum < state.images.length) {
+          Viewer.showPage(pageNum);
+        }
+      });
+      startPageInput.addEventListener('input', (e) => {
+        startPageSlider.value = e.target.value;
+        updateSliderProgress(startPageSlider, e.target.value, state.images.length);
+      });
+      startPageSlider.addEventListener('input', (e) => {
+        startPageInput.value = e.target.value;
+        updateSliderProgress(startPageSlider, e.target.value, state.images.length);
+        // ビューアをそのページにジャンプ
+        const pageNum = parseInt(e.target.value) - 1;
+        if (pageNum >= 0 && pageNum < state.images.length) {
+          Viewer.showPage(pageNum);
+        }
+      });
+      
+      // 初期プログレス設定
+      updateSliderProgress(startPageSlider, 1, state.images.length);
+      updateSliderProgress(endPageSlider, state.images.length, state.images.length);
+      
+      // 閉じるボタン
+      document.getElementById('mv-download-close').addEventListener('click', () => {
+        elements.downloadPanel.style.display = 'none';
+      });
+      
+      document.getElementById('mv-download-execute').addEventListener('click', async () => {
+        let folderName = document.getElementById('mv-folder-name').value.trim();
+        
+        // フォルダ名が空の場合、URLから自動取得
+        if (!folderName) {
+          folderName = DownloadManager.getFolderNameFromURL();
+          document.getElementById('mv-folder-name').value = folderName;
+        }
+        
+        const startPage = parseInt(startPageInput.value);
+        const endPage = parseInt(endPageInput.value);
+        const useOriginalNames = document.querySelector('input[name="mv-filename-type"]:checked').value === 'original';
+        const downloadType = document.querySelector('input[name="mv-download-type"]:checked').value;
+        
+        elements.downloadPanel.style.display = 'none';
+        const totalImages = Math.abs(endPage - startPage) + 1;
+        Utils.showMessage('ダウンロード開始...', 'rgba(0,150,200,0.8)', 3000);
+        
+        try {
+          if (downloadType === 'zip') {
+            await DownloadManager.downloadAsZip(folderName, startPage, endPage, useOriginalNames);
+          } else {
+            await DownloadManager.downloadIndividual(folderName, startPage, endPage, useOriginalNames);
+            Utils.showMessage(`${totalImages}枚のダウンロードを開始しました`);
+          }
+        } catch (error) {
+          console.error('Download failed:', error);
+          Utils.showMessage(`エラー: ${error.message || 'ダウンロードに失敗しました'}`, 'rgba(200,0,0,0.8)');
+        }
+      });
+    },
+    toggle() {
+      if (!elements.downloadPanel) return;
+      const isVisible = elements.downloadPanel.style.display === 'block';
+      elements.downloadPanel.style.display = isVisible ? 'none' : 'block';
+    }
+  };
+
   const Viewer = {
     create() {
       if (elements.container) return;
@@ -449,6 +717,11 @@
       elements.singlePageBtn.setAttribute('data-mv-ui', '1'); elements.container.appendChild(elements.singlePageBtn);
       elements.bgToggleBtn = Utils.createButton(Settings.getBgColor() === '#F5F5F5' ? '背景:白' : '背景:黒', { position: 'absolute', bottom: '40px', left: '20px', background: 'rgba(0,0,0,0.5)', fontSize: '14px', padding: '4px 8px', borderRadius: '6px' }, () => Settings.toggleBgColor());
       elements.bgToggleBtn.setAttribute('data-mv-ui', '1'); elements.container.appendChild(elements.bgToggleBtn);
+      elements.downloadBtn = Utils.createButton('DL', { position: 'absolute', bottom: '120px', left: '20px', background: 'rgba(0,0,0,0.5)', fontSize: '14px', padding: '6px 10px', borderRadius: '6px', title: 'ダウンロード' }, async () => { 
+        if (!elements.downloadPanel) await DownloadUI.createDownloadPanel();
+        DownloadUI.toggle(); 
+      });
+      elements.downloadBtn.setAttribute('data-mv-ui', '1'); elements.container.appendChild(elements.downloadBtn);
     },
     setupEventListeners() {
       elements.container.addEventListener('click', e => {
@@ -612,12 +885,37 @@
   };
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'downloadImage') {
+      chrome.downloads.download({
+        url: request.url,
+        filename: request.filename,
+        saveAs: false
+      });
+      return false;
+    }
+    
     switch (request.action) {
       case 'ping':
         sendResponse({ status: 'pong' });
         break;
       case 'launchViewer':
-        ImageManager.refresh();
+        if (state.images.length === 0) {
+          ImageManager.refresh();
+          setTimeout(() => {
+            if (state.images.length >= CONFIG.minMangaImageCount) {
+              if (state.detectedMode && Settings.getDetectionMode() === 'auto') {
+                const key = `mangaDetectionMode_${window.location.hostname}`;
+                chrome.storage.sync.set({ [key]: state.detectedMode });
+                state.settings.detectionMode = state.detectedMode;
+              }
+              Viewer.showPage(0);
+              sendResponse({ success: true });
+            } else {
+              sendResponse({ success: false, reason: 'insufficient_images' });
+            }
+          }, 300);
+          return true;
+        }
         if (state.images.length >= CONFIG.minMangaImageCount) {
           if (state.detectedMode && Settings.getDetectionMode() === 'auto') {
             const key = `mangaDetectionMode_${window.location.hostname}`;

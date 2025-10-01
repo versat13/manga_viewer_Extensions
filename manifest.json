@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Manga Double-page Spread Viewer",
-  "version": "3.3.0",
+  "version": "3.5.0",
   "description": "When launched on a website where images are displayed in a single vertical column, click the icon in the upper right corner to switch to a double-page display with enhanced resource detection and LazyLoad support.",
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "downloads"
   ],
   "host_permissions": [
     "*://*/*"
@@ -19,6 +20,9 @@
       "all_frames": false
     }
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_title": "Manga Viewer Settings"
