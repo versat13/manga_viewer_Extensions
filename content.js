@@ -23,6 +23,7 @@
 
   const state = {
     currentPage: 0, images: [], isFullscreen: false, lastImageCount: 0, detectedMode: null, isEnabled: false,
+    downloadCancelled: false,
     settings: { siteMode: 'hide', detectionMode: 'auto', singlePageMode: false, bgColor: CONFIG.defaultBg, niconicoThreshold: CONFIG.niconico.defaultThreshold },
     niconico: { threshold: CONFIG.niconico.defaultThreshold }
   };
@@ -33,8 +34,8 @@
   const watched = new WeakSet();
 
   const Utils = {
-    debounce(func, delay) { let t; return function(...args) { clearTimeout(t); t = setTimeout(() => func.apply(this, args), delay); }; },
-    throttle(func, delay) { let last = 0; return function(...args) { const now = Date.now(); if (now - last >= delay) { last = now; return func.apply(this, args); } }; },
+    debounce(func, delay) { let t; return function (...args) { clearTimeout(t); t = setTimeout(() => func.apply(this, args), delay); }; },
+    throttle(func, delay) { let last = 0; return function (...args) { const now = Date.now(); if (now - last >= delay) { last = now; return func.apply(this, args); } }; },
     createButton(text, styles = {}, handler = null) {
       const btn = document.createElement('button');
       btn.textContent = text; btn.type = 'button';
@@ -429,7 +430,7 @@
     async downloadIndividual(folderName, startPage, endPage, useOriginalNames) {
       const start = Math.min(startPage, endPage);
       const end = Math.max(startPage, endPage);
-      
+
       for (let i = start; i <= end; i++) {
         const idx = i - 1;
         if (idx >= 0 && idx < state.images.length) {
@@ -442,21 +443,21 @@
               const ext = this.getExtension(img.src);
               filename = `${folderName}_${String(i).padStart(3, '0')}.${ext}`;
             }
-            
+
             await chrome.runtime.sendMessage({
               action: 'downloadImage',
               url: img.src,
               filename: `manga-viewer/${folderName}/${filename}`,
               conflictAction: 'overwrite'
             });
-            
+
             await new Promise(resolve => setTimeout(resolve, 50));
           } catch (e) {
             console.error(`Failed to download image ${i}:`, e);
           }
         }
       }
-      
+
       await this.saveLastFolderName(folderName);
     },
     getOriginalFilename(src, pageNum) {
@@ -483,91 +484,130 @@
   const DownloadUI = {
     async createDownloadPanel() {
       if (elements.downloadPanel) return;
-      
+
       const panel = document.createElement('div');
-      panel.style.cssText = `position:absolute;bottom:140px;left:20px;background:rgba(0,0,0,0.9);color:white;padding:15px;border-radius:8px;z-index:2;font-size:13px;min-width:280px;display:none;`;
+      panel.style.cssText = `position:absolute;bottom:140px;left:20px;background:white;color:#333;padding:15px;border-radius:8px;z-index:2;font-size:13px;min-width:280px;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.3);`;
       panel.setAttribute('data-mv-ui', '1');
-      
+
       const lastFolder = await DownloadManager.getLastFolderName();
       const suggestedFolder = DownloadManager.suggestNextFolderName(lastFolder);
-      
+      // [修正] 終了ページのデフォルトを常に最終ページに変更
+      const endPageDefault = state.images.length;
+
       panel.innerHTML = `
-        <div style="position:relative;">
-          <div style="font-weight:bold;margin-bottom:10px;color:#4FC3F7;">画像をダウンロード</div>
-          <button id="mv-download-close" style="position:absolute;top:-5px;right:-5px;background:rgba(255,255,255,0.2);color:white;border:none;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:16px;line-height:24px;padding:0;">×</button>
-        </div>
-        
-        <div style="margin-bottom:10px;">
-          <label style="display:block;margin-bottom:4px;font-size:12px;">フォルダ名（ダウンロードフォルダ内に新規作成）:</label>
-          <input type="text" id="mv-folder-name" value="${suggestedFolder}" placeholder="空欄の場合はURL末尾を使用" style="width:100%;padding:6px;border:1px solid #555;border-radius:4px;background:#2a2a2a;color:white;font-size:12px;">
-          ${lastFolder ? `<div style="font-size:11px;color:#888;margin-top:4px;">💡 前回: ${lastFolder}</div>` : ''}
-        </div>
-        
-        <div style="margin-bottom:10px;">
-          <label style="display:block;margin-bottom:6px;font-size:12px;">画像リネーム:</label>
-          <label style="display:block;margin-bottom:4px;font-size:11px;cursor:pointer;">
-            <input type="radio" name="mv-filename-type" value="original" style="margin-right:6px;cursor:pointer;">
-            元ファイル名
-          </label>
-          <label style="display:block;font-size:11px;cursor:pointer;">
-            <input type="radio" name="mv-filename-type" value="numbered" checked style="margin-right:6px;cursor:pointer;">
-            フォルダ名_3桁連番
-          </label>
-        </div>
-        
-        <div style="margin-bottom:10px;">
-          <label style="display:block;margin-bottom:6px;font-size:12px;">保存ページ範囲:</label>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
-            <span style="font-size:11px;width:32px;">開始</span>
-            <input type="number" id="mv-start-page" min="1" max="${state.images.length}" value="1" style="width:50px;padding:4px;border:1px solid #555;border-radius:4px;background:#2a2a2a;color:white;text-align:center;font-size:12px;">
-            <input type="range" id="mv-range-slider-start" min="1" max="${state.images.length}" value="1" style="flex:1;direction:rtl;height:8px;">
+          <div style="position:relative;">
+            <div style="font-weight:bold;margin-bottom:10px;color:#333;">画像をダウンロード</div>
+            <button id="mv-download-close" style="position:absolute;top:-5px;right:-5px;background:#ddd;color:#333;border:none;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:16px;line-height:24px;padding:0;">×</button>
           </div>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:11px;width:32px;">終了</span>
-            <input type="number" id="mv-end-page" min="1" max="${state.images.length}" value="${state.images.length}" style="width:50px;padding:4px;border:1px solid #555;border-radius:4px;background:#2a2a2a;color:white;text-align:center;font-size:12px;">
-            <input type="range" id="mv-range-slider-end" min="1" max="${state.images.length}" value="${state.images.length}" style="flex:1;direction:rtl;height:8px;">
+          
+          <div style="margin-bottom:10px;">
+            <label style="display:block;margin-bottom:4px;font-size:12px;color:#555;">フォルダ名（ダウンロードフォルダ内に新規作成）:</label>
+            <input type="text" id="mv-folder-name" value="${suggestedFolder}" placeholder="空欄の場合はURL末尾を使用" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;background:white;color:#333;font-size:12px;">
+            ${lastFolder ? `<div style="font-size:11px;color:#777;margin-top:4px;">💡 前回: ${lastFolder}</div>` : ''}
           </div>
-        </div>
-        
-        <div style="margin-bottom:12px;">
-          <label style="display:block;margin-bottom:6px;font-size:12px;">保存形式:</label>
-          <label style="display:inline-block;margin-right:15px;font-size:11px;cursor:pointer;">
-            <input type="radio" name="mv-download-type" value="individual" checked style="margin-right:6px;cursor:pointer;">
-            連番画像
-          </label>
-          <label style="display:inline-block;font-size:11px;color:#666;cursor:not-allowed;" title="現在サポートされていません">
-            <input type="radio" name="mv-download-type" value="zip" disabled style="margin-right:6px;">
-            ZIP形式（準備中）
-          </label>
-        </div>
-        
-        <button id="mv-download-execute" style="width:100%;padding:8px;background:#4FC3F7;color:#000;border:none;border-radius:4px;font-weight:bold;cursor:pointer;font-size:13px;">
-          ダウンロード
-        </button>
-        
-        <style>
-          input[type="range"]#mv-range-slider-start::-webkit-slider-thumb,
-          input[type="range"]#mv-range-slider-end::-webkit-slider-thumb {
-            appearance: none;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: #4FC3F7;
-            cursor: pointer;
-          }
-          input[type="range"]#mv-range-slider-start::-webkit-slider-runnable-track,
-          input[type="range"]#mv-range-slider-end::-webkit-slider-runnable-track {
-            width: 100%;
-            height: 8px;
-            background: linear-gradient(to left, #4FC3F7 var(--progress), #555 var(--progress));
-            border-radius: 4px;
-          }
-        </style>
-      `;
-      
+          
+          <div style="margin-bottom:10px;">
+            <label style="display:block;margin-bottom:6px;font-size:12px;color:#555;">画像ファイル名:</label>
+            <label style="display:flex;align-items:center;margin-bottom:4px;font-size:11px;cursor:pointer;">
+              <input type="radio" name="mv-filename-type" value="original" style="margin-right:6px;cursor:pointer;">
+              <span>元ファイル名</span>
+            </label>
+            <label style="display:flex;align-items:center;font-size:11px;cursor:pointer;">
+              <input type="radio" name="mv-filename-type" value="numbered" checked style="margin-right:6px;cursor:pointer;">
+              <span>フォルダ名_3桁連番</span>
+            </label>
+          </div>
+          
+          <div style="margin-bottom:10px;">
+            <label style="display:block;margin-bottom:6px;font-size:12px;color:#555;">保存ページ範囲:</label>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <span style="font-size:11px;width:32px;color:#555;">開始</span>
+              <input type="number" id="mv-start-page" min="1" max="${state.images.length}" value="1" style="width:50px;padding:4px;border:1px solid #ccc;border-radius:4px;background:white;color:#333;text-align:center;font-size:12px;">
+              <div style="flex:1;position:relative;height:18px;display:flex;align-items:center;">
+                <input type="range" id="mv-range-slider-start" min="1" max="${state.images.length}" value="1" style="direction:rtl;">
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:11px;width:32px;color:#555;">終了</span>
+              <input type="number" id="mv-end-page" min="1" max="${state.images.length}" value="${endPageDefault}" style="width:50px;padding:4px;border:1px solid #ccc;border-radius:4px;background:white;color:#333;text-align:center;font-size:12px;">
+              <div style="flex:1;position:relative;height:18px;display:flex;align-items:center;">
+                <input type="range" id="mv-range-slider-end" min="1" max="${state.images.length}" value="${endPageDefault}" style="direction:rtl;">
+              </div>
+            </div>
+          </div>
+          
+          <div style="display:flex;gap:6px;">
+            <button id="mv-download-execute" style="flex:1;padding:8px;background:#4FC3F7;color:#fff;border:none;border-radius:4px;font-weight:bold;cursor:pointer;font-size:13px;">
+              ダウンロード
+            </button>
+            <button id="mv-download-cancel" style="display:none;flex:1;padding:8px;background:#ff5252;color:#fff;border:none;border-radius:4px;font-weight:bold;cursor:pointer;font-size:13px;">
+              キャンセル
+            </button>
+          </div>
+          
+          <style>
+            input[type="range"]#mv-range-slider-start,
+            input[type="range"]#mv-range-slider-end,
+            input[type="range"]#mv-viewer-slider {
+              -webkit-appearance: none;
+              appearance: none;
+              width: 100%;
+              height: 18px;
+              background-color: transparent;
+              outline: none;
+              margin: 0;
+              padding: 0;
+            }
+            input[type="range"]#mv-range-slider-start::-webkit-slider-runnable-track,
+            input[type="range"]#mv-range-slider-end::-webkit-slider-runnable-track,
+            input[type="range"]#mv-viewer-slider::-webkit-slider-runnable-track {
+              width: 100%;
+              height: 6px;
+              cursor: pointer;
+              background: linear-gradient(to left, #007AFF var(--progress, 0%), #ddd var(--progress, 0%));
+              border-radius: 3px;
+            }
+            input[type="range"]#mv-range-slider-start::-webkit-slider-thumb,
+            input[type="range"]#mv-range-slider-end::-webkit-slider-thumb,
+            input[type="range"]#mv-viewer-slider::-webkit-slider-thumb {
+              -webkit-appearance: none;
+              appearance: none;
+              height: 18px;
+              width: 18px;
+              border-radius: 50%;
+              background: #f8f9fa;
+              cursor: pointer;
+              margin-top: -6px;
+              border: 1px solid #ced4da;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            }
+            
+            /* Firefox対応 */
+            input[type="range"]#mv-range-slider-start::-moz-range-track,
+            input[type="range"]#mv-range-slider-end::-moz-range-track,
+            input[type="range"]#mv-viewer-slider::-moz-range-track {
+              width: 100%;
+              height: 6px;
+              background: linear-gradient(to left, #007AFF var(--progress, 0%), #ddd var(--progress, 0%));
+              border-radius: 3px;
+            }
+            input[type="range"]#mv-range-slider-start::-moz-range-thumb,
+            input[type="range"]#mv-range-slider-end::-moz-range-thumb,
+            input[type="range"]#mv-viewer-slider::-moz-range-thumb {
+              width: 18px;
+              height: 18px;
+              border-radius: 50%;
+              background: #f8f9fa;
+              cursor: pointer;
+              border: 1px solid #ced4da;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            }
+          </style>
+        `;
+
       elements.container.appendChild(panel);
       elements.downloadPanel = panel;
-      
+
       this.setupEventListeners();
     },
     setupEventListeners() {
@@ -575,80 +615,127 @@
       const endPageSlider = document.getElementById('mv-range-slider-end');
       const startPageInput = document.getElementById('mv-start-page');
       const startPageSlider = document.getElementById('mv-range-slider-start');
-      
-      // スライダーのプログレス表示を更新
-      const updateSliderProgress = (slider, value, max) => {
-        const progress = ((max - value + 1) / max) * 100;
+      const executeBtn = document.getElementById('mv-download-execute');
+      const cancelBtn = document.getElementById('mv-download-cancel');
+
+      if (!endPageInput || !endPageSlider || !startPageInput || !startPageSlider) {
+        console.error('Download panel elements not found');
+        return;
+      }
+
+      const updateSliderProgress = (slider) => {
+        const value = parseInt(slider.value);
+        const min = parseInt(slider.min) || 1;
+        const max = parseInt(slider.max) || state.images.length;
+        const progress = max > min ? ((value - min) / (max - min)) * 100 : 0;
         slider.style.setProperty('--progress', `${progress}%`);
       };
-      
+
+      // [修正] 開始ページ用：指定ページが「右側」に来るようにジャンプ
+      const jumpToStartPage = (pageNum) => {
+        const isSinglePage = Settings.getSinglePageMode();
+        let targetPageIndex;
+        if (isSinglePage) {
+          targetPageIndex = pageNum - 1;
+        } else {
+          // 指定ページのインデックスをそのまま渡すと、そのページが右側に来る
+          targetPageIndex = pageNum - 1;
+        }
+        targetPageIndex = Math.max(0, Math.min(targetPageIndex, state.images.length - 1));
+        if (elements.container?.style.display === 'flex') Viewer.showPage(targetPageIndex);
+      };
+
+      // 終了ページ用：指定ページが「左側」に来るようにジャンプ
+      const jumpToEndPage = (pageNum) => {
+        const isSinglePage = Settings.getSinglePageMode();
+        let targetPageIndex;
+        if (isSinglePage) {
+          targetPageIndex = pageNum - 1;
+        } else {
+          // 指定ページを左側にするため、その前のページから表示を開始する
+          targetPageIndex = pageNum - 2;
+          if (pageNum === 1) targetPageIndex = 0;
+        }
+        targetPageIndex = Math.max(0, Math.min(targetPageIndex, state.images.length - 1));
+        if (elements.container?.style.display === 'flex') Viewer.showPage(targetPageIndex);
+      };
+
+      // 終了ページのスライダーには jumpToEndPage を適用
       endPageInput.addEventListener('input', (e) => {
-        endPageSlider.value = e.target.value;
-        updateSliderProgress(endPageSlider, e.target.value, state.images.length);
+        const value = Math.max(1, Math.min(parseInt(e.target.value) || 1, state.images.length));
+        e.target.value = value;
+        endPageSlider.value = value;
+        updateSliderProgress(endPageSlider);
+        jumpToEndPage(value);
       });
+
       endPageSlider.addEventListener('input', (e) => {
-        endPageInput.value = e.target.value;
-        updateSliderProgress(endPageSlider, e.target.value, state.images.length);
-        // ビューアをそのページにジャンプ
-        const pageNum = parseInt(e.target.value) - 1;
-        if (pageNum >= 0 && pageNum < state.images.length) {
-          Viewer.showPage(pageNum);
-        }
+        const value = parseInt(e.target.value);
+        endPageInput.value = value;
+        updateSliderProgress(endPageSlider);
+        jumpToEndPage(value);
       });
+
+      // [修正] 開始ページのスライダーには jumpToStartPage を適用
       startPageInput.addEventListener('input', (e) => {
-        startPageSlider.value = e.target.value;
-        updateSliderProgress(startPageSlider, e.target.value, state.images.length);
+        const value = Math.max(1, Math.min(parseInt(e.target.value) || 1, state.images.length));
+        e.target.value = value;
+        startPageSlider.value = value;
+        updateSliderProgress(startPageSlider);
+        jumpToStartPage(value);
       });
+
       startPageSlider.addEventListener('input', (e) => {
-        startPageInput.value = e.target.value;
-        updateSliderProgress(startPageSlider, e.target.value, state.images.length);
-        // ビューアをそのページにジャンプ
-        const pageNum = parseInt(e.target.value) - 1;
-        if (pageNum >= 0 && pageNum < state.images.length) {
-          Viewer.showPage(pageNum);
-        }
+        const value = parseInt(e.target.value);
+        startPageInput.value = value;
+        updateSliderProgress(startPageSlider);
+        jumpToStartPage(value);
       });
-      
-      // 初期プログレス設定
-      updateSliderProgress(startPageSlider, 1, state.images.length);
-      updateSliderProgress(endPageSlider, state.images.length, state.images.length);
-      
-      // 閉じるボタン
+
+      updateSliderProgress(startPageSlider);
+      updateSliderProgress(endPageSlider);
+
       document.getElementById('mv-download-close').addEventListener('click', () => {
         elements.downloadPanel.style.display = 'none';
+        state.downloadCancelled = false;
       });
-      
-      document.getElementById('mv-download-execute').addEventListener('click', async () => {
+
+      executeBtn.addEventListener('click', async () => {
         let folderName = document.getElementById('mv-folder-name').value.trim();
-        
-        // フォルダ名が空の場合、URLから自動取得
         if (!folderName) {
           folderName = DownloadManager.getFolderNameFromURL();
           document.getElementById('mv-folder-name').value = folderName;
         }
-        
         const startPage = parseInt(startPageInput.value);
         const endPage = parseInt(endPageInput.value);
-        const useOriginalNames = document.querySelector('input[name="mv-filename-type"]:checked').value === 'original';
-        const downloadType = document.querySelector('input[name="mv-download-type"]:checked').value;
-        
-        elements.downloadPanel.style.display = 'none';
+        const useOriginalNames = document.querySelector('input[name="mv-filename-type"]:checked')?.value === 'original';
+        state.downloadCancelled = false;
+        executeBtn.style.display = 'none'; cancelBtn.style.display = 'block';
         const totalImages = Math.abs(endPage - startPage) + 1;
-        Utils.showMessage('ダウンロード開始...', 'rgba(0,150,200,0.8)', 3000);
-        
+        Utils.showMessage('ダウンロード開始...', 'rgba(0,150,200,0.8)', 2000);
         try {
-          if (downloadType === 'zip') {
-            await DownloadManager.downloadAsZip(folderName, startPage, endPage, useOriginalNames);
+          await DownloadManager.downloadIndividual(folderName, startPage, endPage, useOriginalNames);
+          if (!state.downloadCancelled) {
+            Utils.showMessage(`${totalImages}枚のダウンロード完了`, 'rgba(0,150,0,0.8)');
           } else {
-            await DownloadManager.downloadIndividual(folderName, startPage, endPage, useOriginalNames);
-            Utils.showMessage(`${totalImages}枚のダウンロードを開始しました`);
+            Utils.showMessage('ダウンロードキャンセル', 'rgba(150,150,0,0.8)');
           }
         } catch (error) {
           console.error('Download failed:', error);
-          Utils.showMessage(`エラー: ${error.message || 'ダウンロードに失敗しました'}`, 'rgba(200,0,0,0.8)');
+          Utils.showMessage(`エラー: ${error.message || 'ダウンロード失敗'}`, 'rgba(200,0,0,0.8)');
+        } finally {
+          executeBtn.style.display = 'block';
+          cancelBtn.style.display = 'none';
+          elements.downloadPanel.style.display = 'none';
         }
       });
+
+      cancelBtn.addEventListener('click', () => {
+        state.downloadCancelled = true;
+        Utils.showMessage('キャンセル中...', 'rgba(200,100,0,0.8)', 1500);
+      });
     },
+
     toggle() {
       if (!elements.downloadPanel) return;
       const isVisible = elements.downloadPanel.style.display === 'block';
@@ -656,9 +743,55 @@
     }
   };
 
+
   const Viewer = {
     create() {
       if (elements.container) return;
+
+      // [修正] スライダーのスタイルを最初に定義し、色の変化を防ぐ
+      if (!document.getElementById('mv-shared-slider-styles')) {
+        const style = document.createElement('style');
+        style.id = 'mv-shared-slider-styles';
+        style.textContent = `
+          input[type="range"]#mv-range-slider-start,
+          input[type="range"]#mv-range-slider-end,
+          input[type="range"]#mv-viewer-slider {
+            -webkit-appearance: none; appearance: none; width: 100%; height: 18px;
+            background-color: transparent; outline: none; margin: 0; padding: 0;
+          }
+          input[type="range"]#mv-range-slider-start::-webkit-slider-runnable-track,
+          input[type="range"]#mv-range-slider-end::-webkit-slider-runnable-track,
+          input[type="range"]#mv-viewer-slider::-webkit-slider-runnable-track {
+            width: 100%; height: 6px; cursor: pointer;
+            background: linear-gradient(to left, #007AFF var(--progress, 0%), #ddd var(--progress, 0%));
+            border-radius: 3px;
+          }
+          input[type="range"]#mv-range-slider-start::-webkit-slider-thumb,
+          input[type="range"]#mv-range-slider-end::-webkit-slider-thumb,
+          input[type="range"]#mv-viewer-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; height: 18px; width: 18px;
+            border-radius: 50%; background: #f8f9fa; cursor: pointer;
+            margin-top: -6px; border: 1px solid #ced4da;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+          }
+          input[type="range"]#mv-range-slider-start::-moz-range-track,
+          input[type="range"]#mv-range-slider-end::-moz-range-track,
+          input[type="range"]#mv-viewer-slider::-moz-range-track {
+            width: 100%; height: 6px;
+            background: linear-gradient(to left, #007AFF var(--progress, 0%), #ddd var(--progress, 0%));
+            border-radius: 3px;
+          }
+          input[type="range"]#mv-range-slider-start::-moz-range-thumb,
+          input[type="range"]#mv-range-slider-end::-moz-range-thumb,
+          input[type="range"]#mv-viewer-slider::-moz-range-thumb {
+            width: 18px; height: 18px; border-radius: 50%;
+            background: #f8f9fa; cursor: pointer; border: 1px solid #ced4da;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+          }
+        `;
+        document.head.appendChild(style);
+      }
+
       elements.container = this.createContainer();
       elements.imageArea = this.createImageArea();
       this.setupControls(); this.setupEventListeners();
@@ -688,11 +821,39 @@
       const btnNextSingle = Utils.createButton('←単', {}, () => this.nextPage(1));
       const btnPrevSingle = Utils.createButton('単→', {}, () => this.prevPage(1));
       const btnPrev = Utils.createButton(isSingle ? '戻→' : '戻→', {}, () => this.prevPage(step));
-      const progress = document.createElement('progress');
-      progress.setAttribute('data-mv-ui', '1'); progress.max = 100; progress.value = 0;
-      progress.style.cssText = `width:160px;height:8px;direction:rtl;`;
-      nav.append(btnNext, btnNextSingle, progress, btnPrevSingle, btnPrev);
-      elements.container.appendChild(nav); elements.navigationElement = nav;
+
+      const sliderWrapper = document.createElement('div');
+      sliderWrapper.style.cssText = 'position:relative;width:200px;height:18px;display:flex;align-items:center;';
+
+      const slider = document.createElement('input');
+      slider.type = 'range';
+      slider.id = 'mv-viewer-slider';
+      slider.setAttribute('data-mv-ui', '1');
+      slider.min = '1';
+      slider.max = state.images.length.toString();
+      slider.value = (state.currentPage + 1).toString();
+      // [修正] step属性を削除し、イベント側で挙動を制御
+      slider.style.cssText = `width:100%;direction:rtl;margin:0;padding:0;`;
+
+      slider.addEventListener('input', (e) => {
+        let targetPage = parseInt(e.target.value) - 1;
+        const isSingle = Settings.getSinglePageMode();
+
+        // [修正] 見開き表示の時、スライダードラッグ操作であれば2ページ単位に補正
+        if (!isSingle) {
+          targetPage = Math.floor(targetPage / 2) * 2;
+        }
+
+        targetPage = Math.max(0, Math.min(targetPage, state.images.length - 1));
+        this.showPage(targetPage);
+      });
+
+      sliderWrapper.appendChild(slider);
+      nav.append(btnNext, btnNextSingle, sliderWrapper, btnPrevSingle, btnPrev);
+      elements.container.appendChild(nav);
+      elements.navigationElement = nav;
+      elements.viewerSlider = slider;
+
       const scheduleFade = () => { clearTimeout(timers.navigation); timers.navigation = setTimeout(() => nav.style.opacity = '0', 3000); };
       nav.addEventListener('mouseenter', () => { nav.style.opacity = '1'; clearTimeout(timers.navigation); });
       nav.addEventListener('mouseleave', scheduleFade);
@@ -717,9 +878,9 @@
       elements.singlePageBtn.setAttribute('data-mv-ui', '1'); elements.container.appendChild(elements.singlePageBtn);
       elements.bgToggleBtn = Utils.createButton(Settings.getBgColor() === '#F5F5F5' ? '背景:白' : '背景:黒', { position: 'absolute', bottom: '40px', left: '20px', background: 'rgba(0,0,0,0.5)', fontSize: '14px', padding: '4px 8px', borderRadius: '6px' }, () => Settings.toggleBgColor());
       elements.bgToggleBtn.setAttribute('data-mv-ui', '1'); elements.container.appendChild(elements.bgToggleBtn);
-      elements.downloadBtn = Utils.createButton('DL', { position: 'absolute', bottom: '120px', left: '20px', background: 'rgba(0,0,0,0.5)', fontSize: '14px', padding: '6px 10px', borderRadius: '6px', title: 'ダウンロード' }, async () => { 
+      elements.downloadBtn = Utils.createButton('DL', { position: 'absolute', bottom: '120px', left: '20px', background: 'rgba(0,0,0,0.5)', fontSize: '14px', padding: '6px 10px', borderRadius: '6px', title: 'ダウンロード' }, async () => {
         if (!elements.downloadPanel) await DownloadUI.createDownloadPanel();
-        DownloadUI.toggle(); 
+        DownloadUI.toggle();
       });
       elements.downloadBtn.setAttribute('data-mv-ui', '1'); elements.container.appendChild(elements.downloadBtn);
     },
@@ -768,11 +929,22 @@
     },
     updatePageInfo() {
       const pageCounter = document.getElementById('mv-page-counter');
-      const progress = elements.container?.querySelector('progress[data-mv-ui]');
-      if (!pageCounter || !progress) return;
+      if (!pageCounter) return;
       const current = state.currentPage + 1, total = state.images.length;
       pageCounter.textContent = `${String(current).padStart(3, '0')}/${String(total).padStart(3, '0')}`;
-      progress.value = Math.floor((current / total) * 100);
+
+      if (elements.viewerSlider) {
+        // [修正] プログレスバーの進行方向を右から左に修正
+        const slider = elements.viewerSlider;
+        const min = parseInt(slider.min) || 1;
+        const max = parseInt(slider.max) || total;
+
+        const progress = max > min ? ((current - min) / (max - min)) * 100 : 0;
+
+        // CSSの 'to left' 指定に合わせて、計算した進行度をそのまま適用
+        slider.style.setProperty('--progress', `${progress}%`);
+        slider.value = current.toString();
+      }
     },
     nextPage(step = null) {
       if (step === null) step = Settings.getSinglePageMode() ? 1 : 2;
@@ -893,7 +1065,7 @@
       });
       return false;
     }
-    
+
     switch (request.action) {
       case 'ping':
         sendResponse({ status: 'pong' });

@@ -5,7 +5,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.downloads.download({
       url: request.url,
       filename: request.filename,
-      conflictAction: 'overwrite',
       saveAs: false
     }, (downloadId) => {
       if (chrome.runtime.lastError) {
