@@ -502,7 +502,10 @@
           
           <div style="margin-bottom:10px;">
             <label style="display:block;margin-bottom:4px;font-size:12px;color:#555;">フォルダ名（ダウンロードフォルダ内に新規作成）:</label>
-            <input type="text" id="mv-folder-name" value="${suggestedFolder}" placeholder="空欄の場合はURL末尾を使用" style="width:100%;padding:6px;border:1px solid #ccc;border-radius:4px;background:white;color:#333;font-size:12px;">
+            <div style="position:relative;">
+              <input type="text" id="mv-folder-name" value="${suggestedFolder}" placeholder="空欄の場合はURL末尾を使用" style="width:100%;padding:6px;padding-right:55px;border:1px solid #ccc;border-radius:4px;background:white;color:#333;font-size:12px;box-sizing:border-box;">
+              <button id="mv-clear-folder-name" type="button" style="position:absolute;right:6px;top:50%;transform:translateY(-50%);background:transparent;border:none;color:#999;cursor:pointer;font-size:11px;padding:4px 6px;transition:color 0.2s;line-height:1;">クリア</button>
+            </div>
             ${lastFolder ? `<div style="font-size:11px;color:#777;margin-top:4px;">💡 前回: ${lastFolder}</div>` : ''}
           </div>
           
@@ -546,6 +549,13 @@
           </div>
           
           <style>
+            #mv-clear-folder-name:hover {
+              color: #4FC3F7;
+            }
+            #mv-clear-folder-name:active {
+              color: #0096c8;
+            }
+            
             input[type="range"]#mv-range-slider-start,
             input[type="range"]#mv-range-slider-end,
             input[type="range"]#mv-viewer-slider {
@@ -617,10 +627,20 @@
       const startPageSlider = document.getElementById('mv-range-slider-start');
       const executeBtn = document.getElementById('mv-download-execute');
       const cancelBtn = document.getElementById('mv-download-cancel');
+      const folderNameInput = document.getElementById('mv-folder-name');
+      const clearFolderNameBtn = document.getElementById('mv-clear-folder-name');
 
       if (!endPageInput || !endPageSlider || !startPageInput || !startPageSlider) {
         console.error('Download panel elements not found');
         return;
+      }
+
+      // フォルダ名クリアボタンのイベントリスナー
+      if (clearFolderNameBtn && folderNameInput) {
+        clearFolderNameBtn.addEventListener('click', () => {
+          folderNameInput.value = '';
+          folderNameInput.focus();
+        });
       }
 
       const updateSliderProgress = (slider) => {
