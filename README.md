@@ -7,12 +7,14 @@
 ### 1. ビューアを起動する
 
 サイト上で「ビューア起動」または「ボタン表示」によりページ右上に表示されたボタンをクリックするとビューアが起動します。
+
+起動前
 <img width="1395" height="909" alt="スクリーンショット 2025-10-03 135122" src="https://github.com/user-attachments/assets/9ed3b3aa-aa2a-4414-a711-fbc4063cb947" />
+起動後
+<img width="1395" height="895" alt="スクリーンショット 2025-10-03 134441" src="https://github.com/user-attachments/assets/77c0e8c4-faad-4147-9f55-b72d950daf56" />
 （ビューアの下部にあるナビゲーションバーは3秒経過で非表示になります）
 
 ### 2. ビューアの操作
-
-<img width="1395" height="895" alt="スクリーンショット 2025-10-03 134441" src="https://github.com/user-attachments/assets/77c0e8c4-faad-4147-9f55-b72d950daf56" />
 
 **マウス操作：**
 - 画面左半分をクリック：次のページへ
