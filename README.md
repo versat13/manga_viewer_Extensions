@@ -55,13 +55,12 @@
   - `戻→` / `戻→`：前ページ
   - プログレスバー：スライダをドラッグ可能
 
-**ダウンロードパネル：**
+**ダウンロードパネル：**  
 <img width="312" height="445" alt="スクリーンショット 2025-10-03 134654" src="https://github.com/user-attachments/assets/d495a082-8c00-4767-8783-265ac7958eba" />
 
 
 ## メインパネル
-
-<img width="312" height="445" alt="スクリーンショット 2025-10-03 134654" src="https://github.com/user-attachments/assets/728d610e-224c-400f-8d72-6af877cbc921" />
+<img width="376" height="523" alt="スクリーンショット 2025-10-03 134727" src="https://github.com/user-attachments/assets/894b6351-eef1-4070-8bd4-e8caed0a4be9" />
 
 ### メイン操作
 - **ビューア起動**：現在のページでビューアを開始
